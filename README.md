@@ -3,8 +3,8 @@ This is the code base for our method FAL-CUR: Fair Active Learning using Uncerta
 Representativeness on Fair Clustering
 
 # Requirements
-python = 3.6
-scikit-learn
-pandas
-numpy
-imblearn
+python > 3.6<br>
+scikit-learn<br>
+pandas <br>
+numpy <br>
+imblearn <br>
