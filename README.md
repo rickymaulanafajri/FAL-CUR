@@ -21,4 +21,26 @@ Sklearn version 0.22 or later <br>
 ```
 git clone https://github.com/rickymaulanafajri/FAL-CUR
 ```
+2. Navigate to the FAL-CUR 
+```
+cd FAL-CUR
+```
+3. Install Dependencies
+```
+pip install -r requirements.txt
+```
+4. To use FAL-CUR, please follow the example provided in the FAL-CUR.ipynb file.
 
+# Citation
+If you use the FAL-CUR method in your research, please consider citing our work. The citation details are as follows:
+```
+@article{FAL-CUR2023,
+    title={FAL-CUR: Fair Active Learning using Uncertainty and Representativeness on Fair Clustering},
+    author={Ricky Maulana Fajri, Akrati Saxena, Yulong Pei, Mykola Pechenizkiy},
+    journal={ArXiv},
+    volume={xx},
+    number={yy},
+    pages={zz-zz},
+    year={2023}
+}
+```
