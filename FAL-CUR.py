@@ -86,91 +86,107 @@ def calculate_fairness_metrics(data, y_pred, protected_attribute):
 
 def save_output_to_file(output):
     # Create 'results' directory if it doesn't exist
-    if not os.path.exists('results'):
-        os.makedirs('results')
+    if not os.path.exists('../results'):
+        os.makedirs('../results')
     
     # Path to the output file
-    filepath = os.path.join('results', 'result.txt')
+    filepath = os.path.join('../results', 'result.txt')
 
     # Write the output to the file
-    with open(filepath, 'a') as file:
+    with open(filepath, 'w') as file:
         file.write(output)
 
 # Main function
 def main():
-    # Dictionary mapping dataset paths to their sensitive attribute
-    datasets = {
-        "data/Compass.csv": 'race',
-        "data/Adult.csv": 'gender',
-        "data/Loan.csv": 'gender',
-        "data/Oalad.csv": 'gender'
-    }
+    print("processing")
+    output = "processing\n"
+    #Importing and preprocess the dataset
+    dataset_path = "../data/compass.csv"
+    dfX = load_and_preprocess_dataset(dataset_path)
+    initial_label, unlabel, test_dataset = split_data(dfX)
+    #Initialize classifier
+    clf = initialize_classifier()
+    
+    #number of clusters
+    k = 180
+   
+    #Train the classifier from initial dataset   
+    X_train = initial_label.drop(['label'], axis=1)
+    y_train = initial_label['label']
+    clf.fit(X_train, y_train)
+    
+    #read the unlabel dataset
+    X_U = unlabel.drop(['label'], axis=1)
+    #calculate the entropy of samples from unlabel pool
+    probs = clf.predict_proba(X_U)
+    entropy = calculate_entropy(probs)
 
-    for dataset_path, sensitive_attr in datasets.items():
-        print(f"Processing {dataset_path}")
-        output = f"Processing {dataset_path}\n"
-        dfX = load_and_preprocess_dataset(dataset_path)
-        initial_label, unlabel, test_dataset = split_data(dfX)
-        clf = initialize_classifier()
+    X_cluster = pd.DataFrame(X_U)
+    X_cluster['entropy'] = entropy
 
-        # Number of clusters
-        k = 180
+    # Using fairKMeans for clustering
+    fair_cluster_labels, centroids, filtered_indices = fairKMeans(X_cluster.to_numpy(), n_clusters=k)
 
-        # Train the classifier from initial dataset
-        X_train = initial_label.drop(['label'], axis=1)
-        y_train = initial_label['label']
-        clf.fit(X_train, y_train)
+    # Ensure that the DataFrame for calculating similarity has the correct features
+    feature_cols = X_cluster.columns.tolist()  # Features used in clustering
 
-        # Process the unlabelled dataset
-        X_U = unlabel.drop(['label'], axis=1)
-        probs = clf.predict_proba(X_U)
-        entropy = calculate_entropy(probs)
+    #create data in fair cluster    
+    fair_data_cluster = unlabel.iloc[filtered_indices].copy()
+    fair_data_cluster['fair_cluster'] = np.array(fair_cluster_labels)[filtered_indices]
+    fair_data_cluster['entropy'] = X_cluster['entropy'].iloc[filtered_indices].values    
 
-        X_cluster = pd.DataFrame(X_U)
-        X_cluster['entropy'] = entropy
 
-        # Using fairKMeans for clustering
-        fair_cluster_labels, centroids, filtered_indices = fairKMeans(X_cluster.to_numpy(), n_clusters=k)
+    # Ensure fair_data_cluster only contains non-negative cluster labels
+    fair_data_cluster = fair_data_cluster[fair_data_cluster['fair_cluster'] >= 0]
 
-        # Ensure that the DataFrame for calculating similarity has the correct features
-        feature_cols = X_cluster.columns.tolist()  
+    # Calculating similarity for filtered data
+    fair_data_cluster['representative'] = calculate_similarity(fair_data_cluster, centroids, feature_cols)
 
-        fair_data_cluster = unlabel.iloc[filtered_indices].copy()
-        fair_data_cluster['fair_cluster'] = np.array(fair_cluster_labels)[filtered_indices]
-        fair_data_cluster['entropy'] = X_cluster['entropy'].iloc[filtered_indices].values    
+    # Calculating the sample score using entropy and representativeness
+    beta = 0.6
+    fair_data_cluster['final_score'] = beta * fair_data_cluster['representative'] + (1.0 - beta) * fair_data_cluster['entropy']
+    fair_data_cluster = fair_data_cluster.sort_values(by=['fair_cluster', 'final_score'], ascending=[True, False])
 
-        fair_data_cluster = fair_data_cluster[fair_data_cluster['fair_cluster'] >= 0]
-        fair_data_cluster['representative'] = calculate_similarity(fair_data_cluster, centroids, feature_cols)
+    # Selecting the sample with the highest final_score from each fair cluster
+    representatives = fair_data_cluster.groupby('fair_cluster').head(1)
 
-        beta = 0.6
-        fair_data_cluster['final_score'] = beta * fair_data_cluster['representative'] + (1.0 - beta) * fair_data_cluster['entropy']
-        fair_data_cluster = fair_data_cluster.sort_values(by=['fair_cluster', 'final_score'], ascending=[True, False])
+    # Updating the training set
+    initial_label = initial_label.append(representatives)
+    initial_label.dropna(inplace=True)
+    initial_label.drop(["fair_cluster", "representative", "final_score","entropy"], axis=1, inplace=True)
 
-        representatives = fair_data_cluster.groupby('fair_cluster').head(1)
+    # Training the classifier with the updated training set
+    X_train = initial_label.drop(['label'], axis=1)
+    y_train = initial_label['label']
+    clf.fit(X_train, y_train)
 
-        initial_label = initial_label.append(representatives)
-        initial_label.dropna(inplace=True)
-        initial_label.drop(["fair_cluster", "representative", "final_score", "entropy"], axis=1, inplace=True)
+    # Evaluating the classifier
+    y_pred = clf.predict(test_dataset.drop(['label'], axis=1))
+    gmean = geometric_mean_score(test_dataset['label'], y_pred)
+    f1 = f1_score(test_dataset['label'], y_pred)
+    acc = accuracy_score(test_dataset['label'], y_pred)
 
-        X_train = initial_label.drop(['label'], axis=1)
-        y_train = initial_label['label']
-        clf.fit(X_train, y_train)
+    # Print performance metrics
+    print(f"Accuracy Score: {acc}")
+    print(f"F1 Score: {f1}")
+    print(f"GMean Score: {gmean}")
 
-        y_pred = clf.predict(test_dataset.drop(['label'], axis=1))
-        gmean = geometric_mean_score(test_dataset['label'], y_pred)
-        f1 = f1_score(test_dataset['label'], y_pred)
-        acc = accuracy_score(test_dataset['label'], y_pred)
+    # Calculating fairness metrics
+    SP, E_OPP, E_Odds = calculate_fairness_metrics(test_dataset, y_pred, 'race')  # Assuming 'race' is the protected attribute
+    #print the fairness score
+    print(f"Statistical Parity: {SP}")
+    print(f"Equal Opportunity: {E_OPP}")
+    print(f"Equalized Odds: {E_Odds}")
+    
+    output += f"Accuracy Score: {acc}\n"
+    output += f"F1 Score: {f1}\n"
+    output += f"GMean Score: {gmean}\n"
+    output += f"Statistical Parity: {SP}\n"
+    output += f"Equal Opportunity: {E_OPP}\n"
+    output += f"Equalized Odds: {E_Odds}\n"
 
-        output += f"Accuracy Score: {acc}\n"
-        output += f"F1 Score: {f1}\n"
-        output += f"GMean Score: {gmean}\n"
-        SP, E_OPP, E_Odds = calculate_fairness_metrics(test_dataset, y_pred, sensitive_attr)
-        output += f"Statistical Parity: {SP}\n"
-        output += f"Equal Opportunity: {E_OPP}\n"
-        output += f"Equalized Odds: {E_Odds}\n"
-
-        # Write the output to a file
-        save_output_to_file(output)
+    # Write the output to a file
+    save_output_to_file(output)
 
 if __name__ == "__main__":
     main()
