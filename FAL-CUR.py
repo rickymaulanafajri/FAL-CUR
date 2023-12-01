@@ -86,11 +86,11 @@ def calculate_fairness_metrics(data, y_pred, protected_attribute):
 
 def save_output_to_file(output):
     # Create 'results' directory if it doesn't exist
-    if not os.path.exists('../results'):
-        os.makedirs('../results')
+    if not os.path.exists('/results'):
+        os.makedirs('/results')
     
     # Path to the output file
-    filepath = os.path.join('../results', 'result.txt')
+    filepath = os.path.join('/results', 'result.txt')
 
     # Write the output to the file
     with open(filepath, 'w') as file:
@@ -101,7 +101,7 @@ def main():
     print("processing")
     output = "processing\n"
     #Importing and preprocess the dataset
-    dataset_path = "../data/compass.csv"
+    dataset_path = "data/compass.csv"
     dfX = load_and_preprocess_dataset(dataset_path)
     initial_label, unlabel, test_dataset = split_data(dfX)
     #Initialize classifier
